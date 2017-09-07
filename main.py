@@ -10,6 +10,9 @@ Usage Instructions:
     5-way, 1-shot omniglot:
         python main.py --datasource=omniglot --metatrain_iterations=40000 --meta_batch_size=32 --update_batch_size=1 --update_lr=0.4 --num_updates=1 --logdir=logs/omniglot5way/
 
+    5-way, 1-shot omniglot with regularizer learning:
+        python main.py --datasource=omniglot --metatrain_iterations=40000 --meta_batch_size=32 --update_batch_size=1 --update_lr=0.4 --num_updates=1 --learn_regularizer=true --logdir=logs/omniglot5way_reg/
+
     20-way, 1-shot omniglot:
         python main.py --datasource=omniglot --metatrain_iterations=40000 --meta_batch_size=16 --update_batch_size=1 --num_classes=20 --update_lr=0.1 --num_updates=5 --logdir=logs/omniglot20way/
 
@@ -49,6 +52,8 @@ flags.DEFINE_float('meta_lr', 0.001, 'the base learning rate of the generator')
 flags.DEFINE_integer('update_batch_size', 5, 'number of examples used for inner gradient update (K for K-shot learning).')
 flags.DEFINE_float('update_lr', 1e-3, 'step size alpha for inner gradient update.') # 0.1 for omniglot
 flags.DEFINE_integer('num_updates', 1, 'number of inner gradient updates during training.')
+flags.DEFINE_float('unary_regularizer_weight', 1, 'weight of unary regularizer')
+flags.DEFINE_float('pairwise_regularizer_weight', 1, 'weight of pairwise regularizer')
 
 ## Model options
 flags.DEFINE_string('norm', 'batch_norm', 'batch_norm, layer_norm, or None')
@@ -56,6 +61,7 @@ flags.DEFINE_integer('num_filters', 64, 'number of filters for conv nets -- 32 f
 flags.DEFINE_bool('conv', True, 'whether or not to use a convolutional network, only applicable in some cases')
 flags.DEFINE_bool('max_pool', False, 'Whether or not to use max pooling rather than strided convolutions')
 flags.DEFINE_bool('stop_grad', False, 'if True, do not use second derivatives in meta-optimization (for speed)')
+flags.DEFINE_bool('learn_regularizer', False, 'wherther or not to learn regularizer')
 
 ## Logging, saving, and testing options
 flags.DEFINE_bool('log', True, 'if false, do not log summaries, for debugging code.')
@@ -112,7 +118,11 @@ def train(model, saver, sess, exp_string, data_generator, resume_itr=0):
             if model.classification:
                 input_tensors.extend([model.total_accuracy1, model.total_accuracies2[FLAGS.num_updates-1]])
 
+        if FLAGS.learn_regularizer:
+            sess.run(model.clip_regularizer_op)
         result = sess.run(input_tensors, feed_dict)
+        if FLAGS.learn_regularizer:
+            sess.run(model.clip_regularizer_op)
 
         if itr % SUMMARY_INTERVAL == 0:
             prelosses.append(result[-2])
@@ -320,6 +330,9 @@ def main():
         exp_string += 'nonorm'
     else:
         print('Norm setting not recognized.')
+
+    if FLAGS.learn_regularizer:
+        exp_string += 'reg.unary' + str(FLAGS.unary_regularizer_weight) + '.pair' + str(FLAGS.pairwise_regularizer_weight)
 
     resume_itr = 0
     model_file = None

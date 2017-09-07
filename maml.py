@@ -58,9 +58,13 @@ class MAML:
             if 'weights' in dir(self):
                 training_scope.reuse_variables()
                 weights = self.weights
+                if FLAGS.learn_regularizer:
+                    phi, eta = self.phi, self.eta
             else:
                 # Define the weights
                 self.weights = weights = self.construct_weights()
+                if FLAGS.learn_regularizer:
+                    self.phi, self.eta = phi, eta = self.construct_regularizer_weights(weights)
 
             # outputbs[i] and lossesb[i] is the output and loss after i+1 gradient updates
             lossesa, outputas, lossesb, outputbs = [], [], [], []
@@ -69,11 +73,16 @@ class MAML:
             outputbs = [[]]*num_updates
             lossesb = [[]]*num_updates
             accuraciesb = [[]]*num_updates
+            if FLAGS.learn_regularizer:
+                reg_losses_unary, reg_losses_pairwise = [], []
 
             def task_metalearn(inp, reuse=True):
                 """ Perform gradient descent for one task in the meta-batch. """
                 inputa, inputb, labela, labelb = inp
                 task_outputbs, task_lossesb = [], []
+
+                if FLAGS.learn_regularizer:
+                    task_reg_losses_unary, task_reg_losses_pairwise = [], []
 
                 if self.classification:
                     task_accuraciesb = []
@@ -86,9 +95,20 @@ class MAML:
                     grads = [tf.stop_gradient(grad) for grad in grads]
                 gradients = dict(zip(weights.keys(), grads))
                 fast_weights = dict(zip(weights.keys(), [weights[key] - self.update_lr*gradients[key] for key in weights.keys()]))
+                if FLAGS.learn_regularizer:
+                    reg_loss_unary = self.unary_regularizer_loss(fast_weights, phi)
+                    #reg_loss_pairwise = self.pairwise_regularizer_loss(fast_weights, eta)
+                    #reg_grads = tf.gradients(FLAGS.unary_regularizer_weight * reg_loss_unary + FLAGS.pairwise_regularizer_weight * reg_loss_pariwise, list(fast_weights.values()))
+                    reg_grads = tf.gradients(FLAGS.unary_regularizer_weight * reg_loss_unary, list(fast_weights.values()))
+                    reg_gradients = dict(zip(fast_weights.keys(), reg_grads))
+                    fast_weights = dict(zip(fast_weights.keys(), [fast_weights[key] - self.update_lr*reg_gradients[key] for key in fast_weights.keys()]))
+
                 output = self.forward(inputb, fast_weights, reuse=True)
                 task_outputbs.append(output)
                 task_lossesb.append(self.loss_func(output, labelb))
+                if FLAGS.learn_regularizer:
+                    task_reg_losses_unary.append(reg_loss_unary)
+                    #task_reg_losses_pairwise.append(reg_loss_pairwise)
 
                 for j in range(num_updates - 1):
                     loss = self.loss_func(self.forward(inputa, fast_weights, reuse=True), labela)
@@ -97,9 +117,21 @@ class MAML:
                         grads = [tf.stop_gradient(grad) for grad in grads]
                     gradients = dict(zip(fast_weights.keys(), grads))
                     fast_weights = dict(zip(fast_weights.keys(), [fast_weights[key] - self.update_lr*gradients[key] for key in fast_weights.keys()]))
+
+                    if FLAGS.learn_regularizer:
+                        reg_loss_unary = self.unary_regularizer_loss(fast_weights, phi)
+                        #reg_loss_pairwise = self.pairwise_regularizer_loss(fast_weights, eta)
+                        #reg_grads = tf.gradients(FLAGS.unary_regularizer_weight * reg_loss_unary + FLAGS.pairwise_regularizer_weight * reg_loss_pariwise, list(fast_weights.values()))
+                        reg_grads = tf.gradients(FLAGS.unary_regularizer_weight * reg_loss_unary, list(fast_weights.values()))
+                        reg_gradients = dict(zip(fast_weights.keys(), reg_grads))
+                        fast_weights = dict(zip(fast_weights.keys(), [fast_weights[key] - self.update_lr*reg_gradients[key] for key in fast_weights.keys()]))
+
                     output = self.forward(inputb, fast_weights, reuse=True)
                     task_outputbs.append(output)
                     task_lossesb.append(self.loss_func(output, labelb))
+                    if FLAGS.learn_regularizer:
+                        task_reg_losses_unary.append(reg_loss_unary)
+                        #task_reg_losses_pairwise.append(reg_loss_pairwise)
 
                 task_output = [task_outputa, task_outputbs, task_lossa, task_lossesb]
 
@@ -108,6 +140,10 @@ class MAML:
                     for j in range(num_updates):
                         task_accuraciesb.append(tf.contrib.metrics.accuracy(tf.argmax(tf.nn.softmax(task_outputbs[j]), 1), tf.argmax(labelb, 1)))
                     task_output.extend([task_accuracya, task_accuraciesb])
+
+                if FLAGS.learn_regularizer:
+                    #task_output.extend([task_reg_losses_unary, task_reg_losses_pairwise])
+                    task_output.append(task_reg_losses_unary)
 
                 return task_output
 
@@ -118,9 +154,18 @@ class MAML:
             out_dtype = [tf.float32, [tf.float32]*num_updates, tf.float32, [tf.float32]*num_updates]
             if self.classification:
                 out_dtype.extend([tf.float32, [tf.float32]*num_updates])
+            if FLAGS.learn_regularizer:
+                out_dtype.append([tf.float32]*num_updates)
             result = tf.map_fn(task_metalearn, elems=(self.inputa, self.inputb, self.labela, self.labelb), dtype=out_dtype, parallel_iterations=FLAGS.meta_batch_size)
             if self.classification:
-                outputas, outputbs, lossesa, lossesb, accuraciesa, accuraciesb = result
+                if FLAGS.learn_regularizer:
+                    #outputas, outputbs, lossesa, lossesb, accuraciesa, accuraciesb, reg_losses_unary, reg_losses_pairwise = result
+                    outputas, outputbs, lossesa, lossesb, accuraciesa, accuraciesb, reg_losses_unary = result
+                else:
+                    outputas, outputbs, lossesa, lossesb, accuraciesa, accuraciesb = result
+            elif FLAGS.learn_regularizer:
+                #outputas, outputbs, lossesa, lossesb, reg_losses_unary, reg_losses_pairwise = result
+                outputas, outputbs, lossesa, lossesb, reg_losses_unary = result
             else:
                 outputas, outputbs, lossesa, lossesb  = result
 
@@ -133,6 +178,10 @@ class MAML:
             if self.classification:
                 self.total_accuracy1 = total_accuracy1 = tf.reduce_sum(accuraciesa) / tf.to_float(FLAGS.meta_batch_size)
                 self.total_accuracies2 = total_accuracies2 = [tf.reduce_sum(accuraciesb[j]) / tf.to_float(FLAGS.meta_batch_size) for j in range(num_updates)]
+            if FLAGS.learn_regularizer:
+                self.total_reg_losses_unary = total_reg_losses_unary = [tf.reduce_sum(reg_losses_unary[j]) / tf.to_float(FLAGS.meta_batch_size) for j in range(num_updates)]
+                #self.total_reg_losses_pairwise = total_reg_losses_pairwise = [tf.reduce_sum(reg_losses_pairwise[j]) / tf.to_float(FLAGS.meta_batch_size) for j in range(num_updates)]
+
             self.pretrain_op = tf.train.AdamOptimizer(self.meta_lr).minimize(total_loss1)
 
             if FLAGS.metatrain_iterations > 0:
@@ -141,12 +190,19 @@ class MAML:
                 if FLAGS.datasource == 'miniimagenet':
                     gvs = [(tf.clip_by_value(grad, -10, 10), var) for grad, var in gvs]
                 self.metatrain_op = optimizer.apply_gradients(gvs)
+            if FLAGS.learn_regularizer:
+                # clip phi and eta to be positive
+                self.clip_regularizer_op = [tf.assign(eta_weight, tf.clip_by_value(eta_weight, 0, np.infty)) for eta_weight in eta.values()] + [tf.assign(phi_weight, tf.clip_by_value(phi_weight, 0, np.infty)) for phi_weight in phi.values()]
         else:
             self.metaval_total_loss1 = total_loss1 = tf.reduce_sum(lossesa) / tf.to_float(FLAGS.meta_batch_size)
             self.metaval_total_losses2 = total_losses2 = [tf.reduce_sum(lossesb[j]) / tf.to_float(FLAGS.meta_batch_size) for j in range(num_updates)]
             if self.classification:
                 self.metaval_total_accuracy1 = total_accuracy1 = tf.reduce_sum(accuraciesa) / tf.to_float(FLAGS.meta_batch_size)
                 self.metaval_total_accuracies2 = total_accuracies2 =[tf.reduce_sum(accuraciesb[j]) / tf.to_float(FLAGS.meta_batch_size) for j in range(num_updates)]
+            if FLAGS.learn_regularizer:
+                self.metaval_reg_losses_unary = total_reg_losses_unary = [tf.reduce_sum(reg_losses_unary[j]) / tf.to_float(FLAGS.meta_batch_size) for j in range(num_updates)]
+                #self.total_reg_losses_pairwise = total_reg_losses_pairwise = [tf.reduce_sum(reg_losses_pairwise[j]) / tf.to_float(FLAGS.meta_batch_size) for j in range(num_updates)]
+
 
         ## Summaries
         tf.summary.scalar(prefix+'Pre-update loss', total_loss1)
@@ -157,6 +213,64 @@ class MAML:
             tf.summary.scalar(prefix+'Post-update loss, step ' + str(j+1), total_losses2[j])
             if self.classification:
                 tf.summary.scalar(prefix+'Post-update accuracy, step ' + str(j+1), total_accuracies2[j])
+            if FLAGS.learn_regularizer:
+                tf.summary.scalar(prefix+'Regularizer loss unary, step ' + str(j+1), total_reg_losses_unary[j])
+                #tf.summary.scalar(prefix+'Regularizer loss pairwise, step ' + str(j+1), total_reg_losses_pairwise[j])
+        print('model construction is done')
+
+    ### Construct parameters for regularizer 
+    def construct_regularizer_weights(self, weights):
+        phi = {} # parameter for unary regularizer weights
+        eta = {} # parameter for pair-wise regularizer weights
+        for name, weight in weights.items():
+            weight_size = weight.get_shape().num_elements()
+            phi[name] = tf.Variable(tf.zeros([weight_size]), name=('phi/'+name))
+            """
+            for name2, weight2 in weights.items():
+                weight_size2 = weight2.get_shape().num_elements()
+                eta_name = name+'_'+name2
+                if name == name2:
+                    # parameter sharing within same layer
+                    eta_dim = (weight_size * weight_size - weight_size) / 2
+                    eta[eta_name] = tf.Variable(tf.zeros([eta_dim]), name=('eta/'+eta_name))
+                else:
+                    # parameter sharing between different layers
+                    eta_dim = weight_size * weight_size2
+                    eta[eta_name] = tf.Variable(tf.zeros([eta_dim]), name=('eta/'+eta_name))
+                print ('eta_name:', eta_name, ' eta_dim:', eta_dim)
+            """
+        print ('regularizer weight construction is done')
+        return phi, eta
+
+    def unary_regularizer_loss(self, weights, phi):
+        loss = 0
+        for name, weight in weights.items():
+            weight_vector = tf.reshape(weight, [-1])
+            loss += tf.reduce_sum(phi[name] * weight_vector * weight_vector)
+        return loss
+
+    def gather_indicies(self, dim):
+        return [j * dim + i for i in range(dim) for j in range(dim) if i > j]
+
+    def pairwise_regularizer_loss(self, weights, eta):
+        loss = 0
+        for name, weight in weights.items():
+            for name2, weight2 in weights.items():
+                eta_name = name+'_'+name2
+                w1 = tf.reshape(weight, [-1])
+                w2 = tf.reshape(weight2, [-1])
+                w2_dim = w2.get_shape().num_elements()
+                diff = tf.reshape(tf.tile(tf.expand_dims(w1, 0), [w2_dim, 1]) - tf.expand_dims(w2, 1), [-1])
+                if name == name2:
+                    # parameter sharing within same layer
+                    indicies = tf.constant(self.gather_indicies(w2_dim))
+                    diff = tf.gather(diff, indicies)
+                    loss += eta[eta_name] * diff * diff
+                else:
+                    # parameter sharing between different layers
+                    loss += eta[eta_name] * diff * diff
+        return loss
+            
 
     ### Network construction functions (fc networks and conv networks)
     def construct_fc_weights(self):
