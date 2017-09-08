@@ -16,6 +16,9 @@ Usage Instructions:
     20-way, 1-shot omniglot:
         python main.py --datasource=omniglot --metatrain_iterations=40000 --meta_batch_size=16 --update_batch_size=1 --num_classes=20 --update_lr=0.1 --num_updates=5 --logdir=logs/omniglot20way/
 
+    20-way, 1-shot omniglot with regularizer learning:
+        python main.py --datasource=omniglot --metatrain_iterations=40000 --meta_batch_size=16 --update_batch_size=1 --num_classes=20 --update_lr=0.1 --num_updates=5 --learn_regularizer=true --logdir=logs/omniglot20way_reg/
+
     5-way 1-shot mini imagenet:
         python main.py --datasource=miniimagenet --metatrain_iterations=60000 --meta_batch_size=4 --update_batch_size=1 --update_lr=0.01 --num_updates=5 --num_classes=5 --logdir=logs/miniimagenet1shot/ --num_filters=32 --max_pool=True
 
