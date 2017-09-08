@@ -65,6 +65,7 @@ flags.DEFINE_bool('conv', True, 'whether or not to use a convolutional network, 
 flags.DEFINE_bool('max_pool', False, 'Whether or not to use max pooling rather than strided convolutions')
 flags.DEFINE_bool('stop_grad', False, 'if True, do not use second derivatives in meta-optimization (for speed)')
 flags.DEFINE_bool('learn_regularizer', False, 'wherther or not to learn regularizer')
+flags.DEFINE_bool('learn_regularizer_pairwise', False, 'whether or not to learn pairwise regularizer')
 
 ## Logging, saving, and testing options
 flags.DEFINE_bool('log', True, 'if false, do not log summaries, for debugging code.')
@@ -336,6 +337,8 @@ def main():
 
     if FLAGS.learn_regularizer:
         exp_string += 'reg.unary' + str(FLAGS.unary_regularizer_weight) + '.pair' + str(FLAGS.pairwise_regularizer_weight)
+        if FLAGS.learn_regularizer_pairwise:
+            exp_string += '.usepair'
 
     resume_itr = 0
     model_file = None
