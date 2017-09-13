@@ -66,6 +66,7 @@ flags.DEFINE_bool('max_pool', False, 'Whether or not to use max pooling rather t
 flags.DEFINE_bool('stop_grad', False, 'if True, do not use second derivatives in meta-optimization (for speed)')
 flags.DEFINE_bool('learn_regularizer', False, 'wherther or not to learn regularizer')
 flags.DEFINE_bool('learn_regularizer_pairwise', False, 'whether or not to learn pairwise regularizer')
+flags.DEFINE_bool('optimize_loss_every_step', False, 'optimize losses for every steps before num_updates')
 
 ## Logging, saving, and testing options
 flags.DEFINE_bool('log', True, 'if false, do not log summaries, for debugging code.')
@@ -339,6 +340,8 @@ def main():
         exp_string += 'reg.unary' + str(FLAGS.unary_regularizer_weight) + '.pair' + str(FLAGS.pairwise_regularizer_weight)
         if FLAGS.learn_regularizer_pairwise:
             exp_string += '.usepair'
+    if FLAGS.optimize_loss_every_step:
+        exp_string += '.everystep_loss'
 
     resume_itr = 0
     model_file = None

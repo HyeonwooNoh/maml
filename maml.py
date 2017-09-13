@@ -204,7 +204,11 @@ class MAML:
 
             if FLAGS.metatrain_iterations > 0:
                 optimizer = tf.train.AdamOptimizer(self.meta_lr)
-                self.gvs = gvs = optimizer.compute_gradients(self.total_losses2[FLAGS.num_updates-1])
+                if FLAGS.optimize_loss_every_step:
+                    target_loss = tf.reduce_sum([self.total_losses2[j] for j in range(FLAGS.num_updates)]) / tf.to_float(FLAGS.num_updates)
+                else:
+                    target_loss = self.total_losses2[FLAGS.num_updates-1]
+                self.gvs = gvs = optimizer.compute_gradients(target_loss)
                 if FLAGS.datasource == 'miniimagenet':
                     gvs = [(tf.clip_by_value(grad, -10, 10), var) for grad, var in gvs]
                 self.metatrain_op = optimizer.apply_gradients(gvs)
