@@ -378,7 +378,8 @@ class MAML:
             hidden4 = tf.reshape(hidden4, [-1, np.prod([int(dim) for dim in hidden4.get_shape()[1:]])])
         else:
             hidden4 = tf.reduce_mean(hidden4, [1, 2])
-
+        if FLAGS.use_dropout:
+            hidden4 = tf.nn.dropout(hidden4, 0.5)
         return tf.matmul(hidden4, weights['w5']) + weights['b5']
 
 

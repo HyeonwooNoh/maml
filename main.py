@@ -69,6 +69,7 @@ flags.DEFINE_bool('learn_regularizer_pairwise', False, 'whether or not to learn 
 flags.DEFINE_bool('optimize_loss_every_step', False, 'optimize losses for every steps before num_updates')
 flags.DEFINE_bool('use_init_centered_reg', False, 'if true, unary regularization is performed to initial parameter')
 flags.DEFINE_bool('weight_decay_phi', False, 'if true, weight decay is applied to phi')
+flags.DEFINE_bool('use_dropout', False, 'if true, dropout is used before final classification layer')
 
 ## Logging, saving, and testing options
 flags.DEFINE_bool('log', True, 'if false, do not log summaries, for debugging code.')
@@ -337,6 +338,9 @@ def main():
         exp_string += 'nonorm'
     else:
         print('Norm setting not recognized.')
+
+    if FLAGS.use_dropout:
+        exp_string += '.dropout'
 
     if FLAGS.learn_regularizer:
         exp_string += 'reg.unary' + str(FLAGS.unary_regularizer_weight) + '.pair' + str(FLAGS.pairwise_regularizer_weight)
