@@ -67,6 +67,8 @@ flags.DEFINE_bool('stop_grad', False, 'if True, do not use second derivatives in
 flags.DEFINE_bool('learn_regularizer', False, 'wherther or not to learn regularizer')
 flags.DEFINE_bool('learn_regularizer_pairwise', False, 'whether or not to learn pairwise regularizer')
 flags.DEFINE_bool('optimize_loss_every_step', False, 'optimize losses for every steps before num_updates')
+flags.DEFINE_bool('use_init_centered_reg', False, 'if true, unary regularization is performed to initial parameter')
+flags.DEFINE_bool('weight_decay_phi', False, 'if true, weight decay is applied to phi')
 
 ## Logging, saving, and testing options
 flags.DEFINE_bool('log', True, 'if false, do not log summaries, for debugging code.')
@@ -338,6 +340,10 @@ def main():
 
     if FLAGS.learn_regularizer:
         exp_string += 'reg.unary' + str(FLAGS.unary_regularizer_weight) + '.pair' + str(FLAGS.pairwise_regularizer_weight)
+        if FLAGS.use_init_centered_reg:
+            exp_string += '.init_center'
+        if FLAGS.weight_decay_phi:
+            exp_string += '.wdphi'
         if FLAGS.learn_regularizer_pairwise:
             exp_string += '.usepair'
     if FLAGS.optimize_loss_every_step:

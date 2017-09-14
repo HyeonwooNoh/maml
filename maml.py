@@ -65,6 +65,7 @@ class MAML:
                 self.weights = weights = self.construct_weights()
                 if FLAGS.learn_regularizer:
                     self.phi = phi = self.construct_unary_regularizer_weights(weights)
+                    self.phi_l2_loss = self.l2_regularize_weight(phi)
                     if FLAGS.learn_regularizer_pairwise:
                         self.eta = eta = self.construct_pairwise_regularizer_weights(weights)
                     else:
@@ -100,7 +101,7 @@ class MAML:
                 gradients = dict(zip(weights.keys(), grads))
                 fast_weights = dict(zip(weights.keys(), [weights[key] - self.update_lr*gradients[key] for key in weights.keys()]))
                 if FLAGS.learn_regularizer:
-                    reg_loss_unary = self.unary_regularizer_loss(fast_weights, phi)
+                    reg_loss_unary = self.unary_regularizer_loss(weights, fast_weights, phi)
                     if FLAGS.learn_regularizer_pairwise:
                         reg_loss_pairwise = self.pairwise_regularizer_loss(fast_weights, eta)
                         reg_grads = tf.gradients(FLAGS.unary_regularizer_weight * reg_loss_unary + FLAGS.pairwise_regularizer_weight * reg_loss_pairwise, list(fast_weights.values()))
@@ -126,7 +127,7 @@ class MAML:
                     fast_weights = dict(zip(fast_weights.keys(), [fast_weights[key] - self.update_lr*gradients[key] for key in fast_weights.keys()]))
 
                     if FLAGS.learn_regularizer:
-                        reg_loss_unary = self.unary_regularizer_loss(fast_weights, phi)
+                        reg_loss_unary = self.unary_regularizer_loss(weights, fast_weights, phi)
                         if FLAGS.learn_regularizer_pairwise:
                             reg_loss_pairwise = self.pairwise_regularizer_loss(fast_weights, eta)
                             reg_grads = tf.gradients(FLAGS.unary_regularizer_weight * reg_loss_unary + FLAGS.pairwise_regularizer_weight * reg_loss_pairwise, list(fast_weights.values()))
@@ -208,6 +209,8 @@ class MAML:
                     target_loss = tf.reduce_sum([self.total_losses2[j] for j in range(FLAGS.num_updates)]) / tf.to_float(FLAGS.num_updates)
                 else:
                     target_loss = self.total_losses2[FLAGS.num_updates-1]
+                if FLAGS.weight_decay_phi:
+                    target_loss += self.phi_l2_loss
                 self.gvs = gvs = optimizer.compute_gradients(target_loss)
                 if FLAGS.datasource == 'miniimagenet':
                     gvs = [(tf.clip_by_value(grad, -10, 10), var) for grad, var in gvs]
@@ -274,11 +277,23 @@ class MAML:
         print ('pairwise regularizer weight construction is done')
         return eta
 
-    def unary_regularizer_loss(self, weights, phi):
+    def unary_regularizer_loss(self, weights, fast_weights, phi):
+        loss = 0
+        for name, fast_weight in fast_weights.items():
+            fast_weight_vector = tf.reshape(fast_weight, [-1])
+            if FLAGS.use_init_centered_reg:
+                weight_vector = tf.reshape(weights[name], [-1])
+                norm_in = fast_weight_vector - weight_vector
+            else:
+                norm_in = fast_weight_vector
+            loss += tf.reduce_sum(phi[name] * norm_in * norm_in)
+        return loss
+
+    def l2_regularize_weight(self, weights):
         loss = 0
         for name, weight in weights.items():
             weight_vector = tf.reshape(weight, [-1])
-            loss += tf.reduce_sum(phi[name] * weight_vector * weight_vector)
+            loss += tf.reduce_sum(weight_vector * weight_vector)
         return loss
 
     def gather_indicies(self, dim):
